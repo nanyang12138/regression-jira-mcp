@@ -84,26 +84,15 @@
 
 ### 安装步骤
 
-1. **克隆或下载项目**
+1. **创建虚拟环境**
 ```bash
 cd c:\Users\nanyang2\Downloads\regression
-```
-
-2. **安装Python依赖**
-```bash
+python -m venv venv
+venv\Scripts\activate.bat
 pip install -r requirements.txt
 ```
 
-3. **配置环境变量**
-```bash
-# 复制配置模板
-copy config.env.example .env
-
-# 编辑.env文件，填入实际配置
-notepad .env
-```
-
-4. **配置MCP服务器**
+2. **配置MCP服务器**
 
 编辑 `C:\Users\nanyang2\AppData\Roaming\Code\User\globalStorage\slai.claude-dev\settings\cline_mcp_settings.json`
 
@@ -112,7 +101,7 @@ notepad .env
 {
   "mcpServers": {
     "regression-system": {
-      "command": "python",
+      "command": "c:/Users/nanyang2/Downloads/regression/venv/Scripts/python.exe",
       "args": ["-m", "regression_jira_mcp.server"],
       "cwd": "c:/Users/nanyang2/Downloads/regression",
       "env": {
@@ -130,7 +119,7 @@ notepad .env
 }
 ```
 
-5. **重启Cline**
+3. **重启Cline**
 
 重启VSCode或重新加载Cline扩展
 

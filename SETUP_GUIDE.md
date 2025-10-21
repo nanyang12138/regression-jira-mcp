@@ -2,48 +2,43 @@
 
 ## 📋 快速设置步骤
 
-### 1. 安装Python依赖
+### 1. 创建虚拟环境并安装依赖（推荐）
 
 ```bash
+# 进入项目目录
 cd c:\Users\nanyang2\Downloads\regression
+
+# 创建虚拟环境
+python -m venv venv
+
+# 激活虚拟环境
+# Windows CMD:
+venv\Scripts\activate.bat
+# Windows PowerShell:
+venv\Scripts\Activate.ps1
+
+# 升级pip（推荐）
+python -m pip install --upgrade pip
+
+# 安装依赖
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境变量
+**注意**: 激活成功后会看到 `(venv)` 前缀
 
-创建`.env`文件（从模板复制）：
+### 2. 配置Cline MCP服务器
 
-```bash
-copy config.env.example .env
-```
-
-编辑`.env`文件，填入您的实际配置：
-
-```bash
-# PostgreSQL配置
-PGDATABASE=your_actual_database_name
-PGHOST=your_actual_host
-PGPORT=5432
-PGUSER=your_username
-PGPASSWORD=your_password
-
-# JIRA配置
-JIRA_URL=https://amd.atlassian.net
-JIRA_USERNAME=Nan.Yang@amd.com
-JIRA_API_TOKEN=your_actual_api_token
-```
-
-### 3. 配置Cline MCP服务器
+**重要**: 只需配置这一个文件，不需要创建.env文件！
 
 打开文件：`C:\Users\nanyang2\AppData\Roaming\Code\User\globalStorage\slai.claude-dev\settings\cline_mcp_settings.json`
 
-添加以下配置：
+添加以下配置（使用虚拟环境的Python）：
 
 ```json
 {
   "mcpServers": {
     "regression-system": {
-      "command": "python",
+      "command": "c:/Users/nanyang2/Downloads/regression/venv/Scripts/python.exe",
       "args": ["-m", "regression_jira_mcp.server"],
       "cwd": "c:/Users/nanyang2/Downloads/regression",
       "env": {
@@ -65,19 +60,16 @@ JIRA_API_TOKEN=your_actual_api_token
 - 替换所有`your_*`占位符为实际值
 - 可以同时保留原有的`mcp-atlassian`配置（如果已安装Docker）
 
-### 4. 测试连接
+### 3. 测试安装（可选）
 
-测试PostgreSQL连接：
 ```bash
-python -c "import psycopg2; conn = psycopg2.connect(dbname='your_db', host='your_host', port=5432, user='your_user', password='your_pass'); print('PostgreSQL OK'); conn.close()"
+# 确保虚拟环境已激活
+python test_installation.py
 ```
 
-测试JIRA连接：
-```bash
-python -c "from jira import JIRA; j = JIRA(server='https://amd.atlassian.net', basic_auth=('your_email', 'your_token')); print('JIRA OK')"
-```
+应该看到所有测试通过✅
 
-### 5. 重启Cline
+### 4. 重启Cline
 
 - 重启VSCode，或
 - 重新加载Cline扩展
