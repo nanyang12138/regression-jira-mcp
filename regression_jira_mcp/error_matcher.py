@@ -6,7 +6,7 @@ Calculates similarity scores and ranks JIRA results by relevance.
 """
 
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from .utils import (
     extract_keywords,
