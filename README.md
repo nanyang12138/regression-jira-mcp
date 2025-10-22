@@ -84,20 +84,17 @@
 
 ### 安装步骤
 
-1. **克隆或下载项目**
+1. **克隆项目**
 ```bash
-cd c:\Users\nanyang2\Downloads\regression
+cd /proj/gfx_meth_user0/nanyang2
+git clone https://github.com/nanyang12138/regression-jira-mcp.git
+cd regression-jira-mcp
 ```
 
 2. **创建Python虚拟环境** (推荐 - 更安全，避免依赖冲突)
 ```bash
-# Linux/Mac
 python3 -m venv venv
 source venv/bin/activate
-
-# Windows
-python -m venv venv
-venv\Scripts\activate
 ```
 
 3. **安装Python依赖**
@@ -108,15 +105,15 @@ pip install -r requirements.txt
 4. **配置环境变量**
 ```bash
 # 复制配置模板
-copy config.env.example .env
+cp config.env.example .env
 
 # 编辑.env文件，填入实际配置
-notepad .env
+vi .env
 ```
 
 5. **配置MCP服务器**
 
-编辑 `C:\Users\nanyang2\AppData\Roaming\Code\User\globalStorage\slai.claude-dev\settings\cline_mcp_settings.json`
+编辑 `~/.config/Code/User/globalStorage/slai.claude-dev/settings/cline_mcp_settings.json`
 
 添加：
 ```json
@@ -141,9 +138,7 @@ notepad .env
 }
 ```
 
-**注意:** 如果使用虚拟环境，`command` 必须指向虚拟环境中的Python解释器：
-- Linux: `/path/to/your/project/venv/bin/python`
-- Windows: `c:/path/to/your/project/venv/Scripts/python.exe`
+**注意:** 如果使用虚拟环境，`command` 必须指向虚拟环境中的Python解释器路径。
 
 6. **重启Cline**
 
@@ -344,24 +339,21 @@ python -c "import psycopg2; conn = psycopg2.connect('your_connection_string'); p
 ## 🤝 与现有系统集成
 
 ```
-现有Ruby脚本 (regression_db_pg.rb)
-    ↓ 写入测试结果
 PostgreSQL数据库
     ↑ 读取测试结果
-新的Python MCP服务器
+Python MCP服务器
     ↓ 查询
 JIRA Cloud
 ```
 
 **重要:** 
-- ✅ `regression_db_pg.rb` 继续运行，负责写入数据
 - ✅ 新系统只读取数据库，不修改
-- ✅ 两个系统可以同时运行
+- ✅ 可以与其他系统同时运行
 
 ## 📄 项目结构
 
 ```
-regression/
+regression-jira-mcp/
 ├── regression_jira_mcp/          # MCP服务器包
 │   ├── __init__.py              # 包初始化
 │   ├── server.py                # MCP服务器主入口
@@ -371,6 +363,7 @@ regression/
 │   ├── error_patterns.py        # 错误模式
 │   ├── error_matcher.py         # 智能匹配
 │   └── utils.py                 # 工具函数
+├── venv/                        # 虚拟环境(gitignored)
 ├── requirements.txt             # Python依赖
 ├── config.env.example           # 配置模板
 ├── .env                         # 实际配置(不提交)
@@ -420,4 +413,4 @@ AMD Verification Team
 
 ---
 
-**祝使用愉快！如有问题，随时在Cline中提问。** 🚀
+**祝使用愉快！如有问题，随时在Cline中提问。** �
