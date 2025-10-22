@@ -7,6 +7,7 @@ Analyzes test log files to extract error signatures and relevant information.
 
 import re
 import os
+import gzip
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 from .error_patterns import (
@@ -126,12 +127,20 @@ class LogAnalyzer:
             )
         
         try:
-            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                # Get file size
+            # Handle gzipped files
+            is_gzipped = log_file_path.endswith('.gz')
+            
+            if is_gzipped:
+                f = gzip.open(log_file_path, 'rt', encoding='utf-8', errors='ignore')
+                file_size = 0  # Can't easily get size for gzip in text mode
+            else:
+                f = open(log_file_path, 'r', encoding='utf-8', errors='ignore')
+                # Get file size for regular files
                 f.seek(0, 2)
                 file_size = f.tell()
                 f.seek(0)
-                
+            
+            try:
                 # Read and process log file
                 for line_num, line in enumerate(f, 1):
                     # Update history (for advanced pattern matching)
@@ -147,7 +156,8 @@ class LogAnalyzer:
                         break
                     
                     # Handle ends_only (scan only file head and tail)
-                    if self.ends_only and not skipped_to_end:
+                    # Skip for gzipped files as they don't support seeking in text mode
+                    if self.ends_only and not skipped_to_end and not is_gzipped:
                         current_pos = f.tell()
                         if current_pos > self.ends_only:
                             skipped_to_end = True
@@ -195,7 +205,9 @@ class LogAnalyzer:
                             first_error_found = True
                             first_error = line.strip()
                             first_error_line = line_num
-                            first_error_offset = f.tell()
+                            # Only get offset for non-gzipped files
+                            if not is_gzipped:
+                                first_error_offset = f.tell()
                         
                         # Update if this is higher severity
                         if failed_level is None or error_match['level'] > failed_level:
@@ -204,8 +216,12 @@ class LogAnalyzer:
                             failed_tool = current_tool
                             failed_line = line
                             failed_line_no = line_num
-                            failed_line_offset = f.tell()
+                            # Only get offset for non-gzipped files
+                            if not is_gzipped:
+                                failed_line_offset = f.tell()
                             failed_pat_pos = error_match['pattern_pos']
+            finally:
+                f.close()
         
         except Exception as e:
             return self._create_error_signature(
@@ -516,7 +532,13 @@ class LogAnalyzer:
             return errors
         
         try:
-            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            # Handle gzipped files
+            if log_file_path.endswith('.gz'):
+                f = gzip.open(log_file_path, 'rt', encoding='utf-8', errors='ignore')
+            else:
+                f = open(log_file_path, 'r', encoding='utf-8', errors='ignore')
+            
+            try:
                 treat_warnings_as_errors = False
                 
                 for line_num, line in enumerate(f, 1):
@@ -545,6 +567,8 @@ class LogAnalyzer:
                         
                         if len(errors) >= max_errors:
                             break
+            finally:
+                f.close()
         
         except Exception:
             pass
@@ -566,11 +590,15 @@ class LogAnalyzer:
             return "Log file not found"
         
         try:
-            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                # Read all lines and get the last N
-                lines = f.readlines()
-                tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
-                return ''.join(tail_lines)
+            # Handle gzipped files
+            if log_file_path.endswith('.gz'):
+                with gzip.open(log_file_path, 'rt', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+            else:
+                with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+            tail_lines = lines[-num_lines:] if len(lines) > num_lines else lines
+            return ''.join(tail_lines)
         except Exception as e:
             return f"Error reading log file: {str(e)}"
     
@@ -595,8 +623,13 @@ class LogAnalyzer:
             return "Log file not found"
         
         try:
-            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = f.readlines()
+            # Handle gzipped files
+            if log_file_path.endswith('.gz'):
+                with gzip.open(log_file_path, 'rt', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+            else:
+                with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
                 
                 start = max(0, error_line_number - context_lines - 1)
                 end = min(len(lines), error_line_number + context_lines)
@@ -625,9 +658,15 @@ def quick_error_check(log_file_path: str) -> bool:
     if not os.path.exists(log_file_path):
         return False
     
-    analyzer = LogAnalyzer(max_lines=1000)
+    analyzer = LogAnalyzer(max_lines=None)  # No limit, scan entire file
     try:
-        with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        # Handle gzipped files
+        if log_file_path.endswith('.gz'):
+            f = gzip.open(log_file_path, 'rt', encoding='utf-8', errors='ignore')
+        else:
+            f = open(log_file_path, 'r', encoding='utf-8', errors='ignore')
+        
+        try:
             for line in f:
                 if analyzer._should_ignore(line):
                     continue
@@ -635,6 +674,8 @@ def quick_error_check(log_file_path: str) -> bool:
                 error_match = analyzer._match_error_patterns(line, "unknown", False)
                 if error_match:
                     return True
+        finally:
+            f.close()
     except Exception:
         pass
     

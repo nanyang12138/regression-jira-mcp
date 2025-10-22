@@ -107,7 +107,7 @@ class RegressionDB:
         regression_run_id: Optional[int] = None,
         project_name: Optional[str] = None,
         regression_name: Optional[str] = None,
-        limit: int = 10
+        limit: Optional[int] = None
     ) -> List[Dict]:
         """
         Query failed tests from database.
@@ -116,7 +116,7 @@ class RegressionDB:
             regression_run_id: Regression run ID (or use project/regression names)
             project_name: Project name (optional if regression_run_id provided)
             regression_name: Regression name (optional if regression_run_id provided)
-            limit: Maximum number of results
+            limit: Maximum number of results (optional, None = no limit)
             
         Returns:
             List of test dictionaries
@@ -148,7 +148,7 @@ class RegressionDB:
             tor.random_seed,
             tor.failed_job_run_ref,
             tor.mem_usage,
-            tor.lsf_req_mb as lsf_req_mb
+            tor."lsf_req_MB" as lsf_req_MB
         FROM {table_name} tor
         JOIN test_status ts ON tor.test_status_ref = ts.test_status_id
         JOIN test_object tobj ON tor.test_object_ref = tobj.test_object_id
@@ -160,13 +160,18 @@ class RegressionDB:
         WHERE tor.regression_run_ref = %s
           AND ts.test_status_name = 'failed'
         ORDER BY tor.end_time DESC
-        LIMIT %s
         """
+        
+        if limit is not None:
+            query += " LIMIT %s"
         
         results = []
         with self.get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (regression_run_id, limit))
+                if limit is not None:
+                    cur.execute(query, (regression_run_id, limit))
+                else:
+                    cur.execute(query, (regression_run_id,))
                 for row in cur.fetchall():
                     results.append({
                         'test_object_run_id': row[0],
@@ -240,7 +245,7 @@ class RegressionDB:
             tor.random_seed,
             tor.failed_job_run_ref,
             tor.mem_usage,
-            tor.lsf_req_mb as lsf_req_mb
+            tor."lsf_req_MB" as lsf_req_MB
         FROM {table_name} tor
         JOIN test_status ts ON tor.test_status_ref = ts.test_status_id
         JOIN test_object tobj ON tor.test_object_ref = tobj.test_object_id
@@ -572,17 +577,74 @@ class RegressionDB:
                 
                 return result
     
+    def get_regression_runs_by_regression_id(
+        self,
+        regression_id: int,
+        limit: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Get all regression runs for a specific regression_id.
+        
+        Args:
+            regression_id: Regression ID
+            limit: Maximum results (optional, None = no limit)
+            
+        Returns:
+            List of regression run summaries
+        """
+        query = """
+        SELECT 
+            rr.regression_run_id,
+            p.project_name,
+            r.regression_name,
+            rr.changelist,
+            rr.iteration,
+            rr.start_time,
+            rr.end_time,
+            rs.regression_status_name
+        FROM regression_run rr
+        JOIN project p ON rr.project_ref = p.project_id
+        JOIN regression r ON rr.regression_ref = r.regression_id
+        JOIN regression_status rs ON rr.regression_status = rs.regression_status_id
+        WHERE rr.regression_ref = %s
+        ORDER BY rr.start_time DESC
+        """
+        
+        if limit is not None:
+            query += " LIMIT %s"
+        
+        results = []
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                if limit is not None:
+                    cur.execute(query, (regression_id, limit))
+                else:
+                    cur.execute(query, (regression_id,))
+                for row in cur.fetchall():
+                    results.append({
+                        'regression_run_id': row[0],
+                        'project_name': row[1],
+                        'regression_name': row[2],
+                        'changelist': row[3],
+                        'iteration': row[4],
+                        'start_time': str(row[5]) if row[5] else None,
+                        'end_time': str(row[6]) if row[6] else None,
+                        'status': row[7]
+                    })
+        
+        return results
+
     def list_regression_runs(
         self,
         project_name: Optional[str] = None,
-        limit: int = 20
+        limit: Optional[int] = None
     ) -> List[Dict]:
         """
         List recent regression runs.
         
         Args:
             project_name: Filter by project name
-            limit: Maximum results
+            limit: Maximum results (optional, None = no limit)
             
         Returns:
             List of regression run summaries
@@ -608,8 +670,11 @@ class RegressionDB:
             query += " WHERE p.project_name = %s"
             params.append(project_name)
         
-        query += " ORDER BY rr.start_time DESC LIMIT %s"
-        params.append(limit)
+        query += " ORDER BY rr.start_time DESC"
+        
+        if limit is not None:
+            query += " LIMIT %s"
+            params.append(limit)
         
         results = []
         with self.get_connection() as conn:
@@ -655,7 +720,7 @@ class RegressionDB:
         JOIN project p ON rr.project_ref = p.project_id
         JOIN regression r ON rr.regression_ref = r.regression_id
         ORDER BY rr.start_time DESC
-        LIMIT 10
+        LIMIT 100
         """
         
         with self.get_connection() as conn:

@@ -40,8 +40,8 @@ def initialize():
         db = RegressionDB()
         jira = JiraClient()
         log_analyzer = LogAnalyzer(
-            max_lines=int(os.getenv('MAX_LOG_LINES', 10000)),
-            ends_only=int(os.getenv('LOG_ENDS_ONLY', 100000))
+            max_lines=None,  # Scan entire log file, no limit
+            ends_only=None   # Scan entire file, not just ends
         )
         error_matcher = ErrorMatcher()
     except Exception as e:
@@ -77,8 +77,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of results (default: 10)",
-                        "default": 10
+                        "description": "Maximum number of results (optional, omit for no limit)"
                     },
                     "include_logs": {
                         "type": "boolean",
@@ -262,8 +261,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum results (default: 20)",
-                        "default": 20
+                        "description": "Maximum results (optional, omit for no limit)"
                     }
                 }
             }
@@ -640,12 +638,13 @@ async def batch_find_solutions_tool(args: dict) -> dict:
 async def list_regression_runs_tool(args: dict) -> dict:
     """List regression runs"""
     project_name = args.get('project_name')
-    limit = args.get('limit', 20)
+    limit = args.get('limit')  # None if not provided
     
     runs = db.list_regression_runs(project_name=project_name, limit=limit)
     return {
         'total': len(runs),
         'project_filter': project_name,
+        'limit_used': limit,
         'runs': runs
     }
 

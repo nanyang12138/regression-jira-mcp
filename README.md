@@ -89,12 +89,23 @@
 cd c:\Users\nanyang2\Downloads\regression
 ```
 
-2. **安装Python依赖**
+2. **创建Python虚拟环境** (推荐 - 更安全，避免依赖冲突)
+```bash
+# Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
+
+# Windows
+python -m venv venv
+venv\Scripts\activate
+```
+
+3. **安装Python依赖**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **配置环境变量**
+4. **配置环境变量**
 ```bash
 # 复制配置模板
 copy config.env.example .env
@@ -103,7 +114,7 @@ copy config.env.example .env
 notepad .env
 ```
 
-4. **配置MCP服务器**
+5. **配置MCP服务器**
 
 编辑 `C:\Users\nanyang2\AppData\Roaming\Code\User\globalStorage\slai.claude-dev\settings\cline_mcp_settings.json`
 
@@ -112,9 +123,9 @@ notepad .env
 {
   "mcpServers": {
     "regression-system": {
-      "command": "python",
+      "command": "/proj/gfx_meth_user0/nanyang2/regression-jira-mcp/venv/bin/python",
       "args": ["-m", "regression_jira_mcp.server"],
-      "cwd": "c:/Users/nanyang2/Downloads/regression",
+      "cwd": "/proj/gfx_meth_user0/nanyang2/regression-jira-mcp",
       "env": {
         "PGDATABASE": "your_database",
         "PGHOST": "your_host",
@@ -130,7 +141,11 @@ notepad .env
 }
 ```
 
-5. **重启Cline**
+**注意:** 如果使用虚拟环境，`command` 必须指向虚拟环境中的Python解释器：
+- Linux: `/path/to/your/project/venv/bin/python`
+- Windows: `c:/path/to/your/project/venv/Scripts/python.exe`
+
+6. **重启Cline**
 
 重启VSCode或重新加载Cline扩展
 

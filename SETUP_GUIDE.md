@@ -2,14 +2,31 @@
 
 ## 📋 快速设置步骤
 
-### 1. 安装Python依赖
+### 1. 创建Python虚拟环境 (推荐)
+
+**为什么使用虚拟环境？**
+- ✅ 依赖隔离，避免与系统Python包冲突
+- ✅ 更安全，不影响其他项目
+- ✅ 易于管理和复现环境
 
 ```bash
-cd c:\Users\nanyang2\Downloads\regression
+cd /proj/gfx_meth_user0/nanyang2/regression-jira-mcp
+
+# Linux/Mac
+python3 -m venv venv
+source venv/bin/activate
+(or source venv/bin/activate.csh)
+
+激活虚拟环境后，命令提示符前会显示 `(venv)`。
+
+### 2. 安装Python依赖
+
+```bash
+# 确保虚拟环境已激活
 pip install -r requirements.txt
 ```
 
-### 2. 配置环境变量
+### 3. 配置环境变量
 
 创建`.env`文件（从模板复制）：
 
@@ -33,9 +50,9 @@ JIRA_USERNAME=Nan.Yang@amd.com
 JIRA_API_TOKEN=your_actual_api_token
 ```
 
-### 3. 配置Cline MCP服务器
+### 4. 配置Cline MCP服务器
 
-打开文件：`C:\Users\nanyang2\AppData\Roaming\Code\User\globalStorage\slai.claude-dev\settings\cline_mcp_settings.json`
+打开文件：`~/.config/Code/User/globalStorage/slai.claude-dev/settings/cline_mcp_settings.json`
 
 添加以下配置：
 
@@ -43,9 +60,9 @@ JIRA_API_TOKEN=your_actual_api_token
 {
   "mcpServers": {
     "regression-system": {
-      "command": "python",
+      "command": "/proj/gfx_meth_user0/nanyang2/regression-jira-mcp/venv/bin/python",
       "args": ["-m", "regression_jira_mcp.server"],
-      "cwd": "c:/Users/nanyang2/Downloads/regression",
+      "cwd": "/proj/gfx_meth_user0/nanyang2/regression-jira-mcp",
       "env": {
         "PGDATABASE": "your_database",
         "PGHOST": "your_host",
@@ -61,11 +78,17 @@ JIRA_API_TOKEN=your_actual_api_token
 }
 ```
 
-**重要提示：** 
+**重要提示：**
 - 替换所有`your_*`占位符为实际值
+- 如果使用虚拟环境，`command` 必须指向虚拟环境中的Python：
+  - Linux/Mac: `/path/to/project/venv/bin/python`
+  - Windows: `c:/path/to/project/venv/Scripts/python.exe`
 - 可以同时保留原有的`mcp-atlassian`配置（如果已安装Docker）
 
-### 4. 测试连接
+### 5. 测试连接
+
+**注意：** 在测试前，确保虚拟环境已激活！
+
 
 测试PostgreSQL连接：
 ```bash
@@ -77,12 +100,12 @@ python -c "import psycopg2; conn = psycopg2.connect(dbname='your_db', host='your
 python -c "from jira import JIRA; j = JIRA(server='https://amd.atlassian.net', basic_auth=('your_email', 'your_token')); print('JIRA OK')"
 ```
 
-### 5. 重启Cline
+### 6. 重启Cline
 
 - 重启VSCode，或
 - 重新加载Cline扩展
 
-### 6. 验证MCP服务器
+### 7. 验证MCP服务器
 
 在Cline中询问：
 ```
@@ -171,10 +194,23 @@ python -c "from regression_jira_mcp.db_queries import RegressionDB; db = Regress
 ### 问题4: MCP服务器无法启动
 
 **调试步骤：**
-1. 检查Python版本：`python --version` (需要3.8+)
-2. 检查依赖：`pip list | findstr mcp`
-3. 手动运行服务器：`python -m regression_jira_mcp.server`
-4. 查看错误信息
+1. 确保虚拟环境已激活：`source venv/bin/activate` (Linux/Mac) 或 `venv\Scripts\activate` (Windows)
+2. 检查Python版本：`python --version` (需要3.8+)
+3. 检查依赖：`pip list | grep mcp` (Linux/Mac) 或 `pip list | findstr mcp` (Windows)
+4. 手动运行服务器：`python -m regression_jira_mcp.server`
+5. 查看错误信息
+
+### 问题5: "找不到mcp模块"
+
+**原因：** 虚拟环境未激活或MCP配置未指向虚拟环境的Python
+
+**解决：**
+1. 检查MCP配置中的`command`是否指向venv中的Python
+2. 确保依赖已在虚拟环境中安装：
+   ```bash
+   source venv/bin/activate  # 激活虚拟环境
+   pip list  # 确认mcp已安装
+   ```
 
 ## 📊 性能建议
 
