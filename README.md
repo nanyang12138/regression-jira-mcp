@@ -346,7 +346,7 @@ Python MCP服务器
 JIRA Cloud
 ```
 
-**重要:** 
+**重要:**
 - ✅ 新系统只读取数据库，不修改
 - ✅ 可以与其他系统同时运行
 
@@ -409,7 +409,7 @@ regression-jira-mcp/
 
 ## 👥 贡献者
 
-AMD Verification Team
+Andy
 
 ---
 

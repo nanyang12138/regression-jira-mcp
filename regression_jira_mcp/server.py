@@ -18,6 +18,7 @@ from .jira_client import JiraClient
 from .log_analyzer import LogAnalyzer
 from .error_matcher import ErrorMatcher
 from .utils import extract_keywords_from_test_name
+from .security import SecurityError
 
 # Load environment variables
 load_dotenv()
@@ -298,6 +299,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             raise ValueError(f"Unknown tool: {name}")
         
         return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
+    
+    except SecurityError as e:
+        # Handle security violations with clear message
+        error_result = {
+            "error": "SECURITY_VIOLATION",
+            "message": str(e),
+            "tool": name,
+            "note": "This MCP server has read-only access to the database."
+        }
+        return [TextContent(type="text", text=json.dumps(error_result, indent=2))]
     
     except Exception as e:
         error_result = {"error": str(e), "tool": name}

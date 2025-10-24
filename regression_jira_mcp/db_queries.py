@@ -10,6 +10,11 @@ import psycopg2
 from psycopg2 import pool
 from typing import List, Dict, Optional, Tuple
 from contextlib import contextmanager
+import logging
+
+from .security import validate_query, SecurityError
+
+logger = logging.getLogger(__name__)
 
 
 class RegressionDB:
@@ -44,12 +49,43 @@ class RegressionDB:
     
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections"""
+        """
+        Context manager for database connections.
+        
+        Automatically sets connection to read-only mode for security.
+        """
         conn = self.connection_pool.getconn()
         try:
+            # Set connection to read-only mode (silent enforcement)
+            # PostgreSQL will reject any write operations at the connection level
+            conn.set_session(readonly=True, autocommit=True)
             yield conn
         finally:
             self.connection_pool.putconn(conn)
+    
+    def _execute_safe(self, cursor, query: str, params=None):
+        """
+        Execute query with validation.
+        
+        Validates query for write operations before execution.
+        Only raises SecurityError if write operation is attempted.
+        
+        Args:
+            cursor: Database cursor
+            query: SQL query to execute
+            params: Query parameters (optional)
+            
+        Raises:
+            SecurityError: If query contains write operations
+        """
+        # Validate query (silent unless write operation detected)
+        validate_query(query)
+        
+        # Execute the validated query
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
     
     def get_status_map(self) -> Dict[str, int]:
         """Get test status name to ID mapping"""
