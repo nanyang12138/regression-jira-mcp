@@ -2,38 +2,113 @@
 JIRA Client Module
 
 JIRA API interface for searching and retrieving issue information.
+Includes read-only protection layer to prevent data modification.
 """
 
 import os
 from typing import List, Dict, Optional
 from jira import JIRA
 from .utils import create_jira_url, extract_keywords
+from .security import validate_jira_operation, SecurityError
+
+
+class ReadOnlyJiraProxy:
+    """
+    Read-only proxy wrapper for JIRA client.
+    
+    Intercepts all method calls to the JIRA library and validates
+    that only read-only operations are performed. This provides
+    defense-in-depth security even if users have valid API tokens.
+    
+    Implementation uses __getattr__ to intercept method access and
+    validate operations before forwarding to the underlying JIRA instance.
+    """
+    
+    def __init__(self, jira_instance):
+        """
+        Initialize proxy with JIRA instance.
+        
+        Args:
+            jira_instance: The underlying JIRA client instance to wrap
+        """
+        # Use object.__setattr__ to avoid triggering our custom __setattr__
+        object.__setattr__(self, '_jira', jira_instance)
+    
+    def __getattr__(self, name):
+        """
+        Intercept all attribute/method access.
+        
+        Validates that the requested operation is read-only before
+        forwarding to the underlying JIRA instance.
+        
+        Args:
+            name: Name of the attribute/method being accessed
+            
+        Returns:
+            The requested attribute/method from underlying JIRA instance
+            
+        Raises:
+            SecurityError: If operation is not allowed
+        """
+        # Validate operation is allowed
+        validate_jira_operation(name)
+        
+        # Return the actual method/attribute from underlying JIRA instance
+        return getattr(self._jira, name)
+    
+    def __setattr__(self, name, value):
+        """
+        Block attribute modification (except internal _jira).
+        
+        Args:
+            name: Attribute name
+            value: Attribute value
+            
+        Raises:
+            SecurityError: If attempting to modify non-internal attributes
+        """
+        if name != '_jira':
+            raise SecurityError(
+                "Cannot modify JIRA client attributes. "
+                "This MCP server has read-only access."
+            )
+        object.__setattr__(self, name, value)
 
 
 class JiraClient:
     """
-    JIRA API client wrapper.
+    JIRA API client wrapper with read-only protection.
     
     Provides simplified interface to JIRA Cloud for searching issues,
     getting issue details, and extracting solutions.
+    
+    All JIRA operations are wrapped with ReadOnlyJiraProxy to ensure
+    only read-only operations are permitted, even with valid API tokens.
     """
     
     def __init__(self):
-        """Initialize JIRA client"""
-        self.jira = None
+        """Initialize JIRA client with read-only protection"""
+        self._raw_jira = None  # Original JIRA instance (not exposed)
+        self.jira = None       # Read-only proxy wrapper (used by all methods)
         self.base_url = os.getenv('JIRA_URL', '')
         self._connect()
     
     def _connect(self):
-        """Establish JIRA connection"""
+        """Establish JIRA connection with read-only wrapper"""
         try:
-            self.jira = JIRA(
+            # Create the underlying JIRA connection
+            self._raw_jira = JIRA(
                 server=self.base_url,
                 basic_auth=(
                     os.getenv('JIRA_USERNAME'),
                     os.getenv('JIRA_API_TOKEN')
                 )
             )
+            
+            # Wrap with read-only proxy for security
+            # All method calls will be validated before reaching JIRA library
+            self.jira = ReadOnlyJiraProxy(self._raw_jira)
+            
         except Exception as e:
             raise Exception(f"Failed to connect to JIRA: {str(e)}")
     
