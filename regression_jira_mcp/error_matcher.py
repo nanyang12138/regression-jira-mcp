@@ -3,6 +3,8 @@ Error Matcher Module
 
 Intelligent matching between test errors and JIRA issues.
 Calculates similarity scores and ranks JIRA results by relevance.
+
+Now enhanced with NLP processing for better semantic matching.
 """
 
 import re
@@ -14,6 +16,10 @@ from .utils import (
     calculate_keyword_similarity,
     SimilarityScore
 )
+from .nlp_utils import get_nlp_processor
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -65,12 +71,15 @@ class ErrorMatcher:
     
     Calculates similarity between test errors and JIRA issues using
     multiple algorithms and ranks results by relevance.
+    
+    Enhanced with NLP processing for semantic matching.
     """
     
     def __init__(self):
         """Initialize the error matcher"""
         self.use_sklearn = SKLEARN_AVAILABLE
         self.use_levenshtein = LEVENSHTEIN_AVAILABLE
+        self.nlp = get_nlp_processor()
     
     def match_jira_issues(
         self,
@@ -78,7 +87,8 @@ class ErrorMatcher:
         error_keywords: List[str],
         jira_issues: List[Dict],
         min_score: float = 0.3,
-        max_results: int = 10
+        max_results: int = 10,
+        use_semantic: bool = True
     ) -> List[JiraMatch]:
         """
         Match and rank JIRA issues against test error.
@@ -89,6 +99,7 @@ class ErrorMatcher:
             jira_issues: List of JIRA issues from search
             min_score: Minimum similarity score (0.0-1.0)
             max_results: Maximum number of results to return
+            use_semantic: Whether to use semantic similarity (NLP-enhanced)
             
         Returns:
             List of JiraMatch objects, sorted by relevance
@@ -96,14 +107,25 @@ class ErrorMatcher:
         if not jira_issues:
             return []
         
+        # Expand keywords with synonyms if using semantic matching
+        expanded_keywords = error_keywords
+        if use_semantic:
+            try:
+                expanded_keywords = self.nlp.expand_with_synonyms(error_keywords)
+                logger.debug(f"Expanded {len(error_keywords)} keywords to {len(expanded_keywords)}")
+            except Exception as e:
+                logger.warning(f"Synonym expansion failed: {e}")
+                expanded_keywords = error_keywords
+        
         matches = []
         
         for issue in jira_issues:
             # Calculate similarity score
             score, reason, matching_kw = self._calculate_similarity(
                 error_signature,
-                error_keywords,
-                issue
+                expanded_keywords,
+                issue,
+                use_semantic=use_semantic
             )
             
             if score >= min_score:
@@ -134,20 +156,23 @@ class ErrorMatcher:
         self,
         error_signature: str,
         error_keywords: List[str],
-        jira_issue: Dict
+        jira_issue: Dict,
+        use_semantic: bool = True
     ) -> Tuple[float, str, List[str]]:
         """
         Calculate similarity between error and JIRA issue.
         
         Uses multiple methods and combines scores:
-        1. Keyword matching (Jaccard similarity)
-        2. Text similarity (if sklearn available)
-        3. Edit distance (if Levenshtein available)
+        1. Keyword matching (Jaccard similarity) - now with synonyms
+        2. Semantic similarity (NLP-enhanced)
+        3. Text similarity (if sklearn available)
+        4. Edit distance (if Levenshtein available)
         
         Args:
             error_signature: Error signature text
-            error_keywords: Keywords from error
+            error_keywords: Keywords from error (may be expanded with synonyms)
             jira_issue: JIRA issue dictionary
+            use_semantic: Whether to use semantic similarity
             
         Returns:
             Tuple of (score, reason, matching_keywords)
@@ -160,27 +185,40 @@ class ErrorMatcher:
         
         # Method 1: Keyword matching (always available)
         keyword_sim = calculate_keyword_similarity(error_keywords, jira_keywords)
-        scores.append(keyword_sim.score * 0.5)  # Weight: 50%
+        scores.append(keyword_sim.score * 0.4)  # Weight: 40% (reduced to make room for semantic)
         if keyword_sim.score > 0.5:
             reasons.append(f"Keyword match: {keyword_sim}")
         
-        # Method 2: Text similarity (if sklearn available)
+        # Method 2: Semantic similarity (NLP-enhanced)
+        if use_semantic:
+            try:
+                semantic_score = self.nlp.calculate_semantic_similarity(
+                    error_signature,
+                    jira_text
+                )
+                scores.append(semantic_score * 0.3)  # Weight: 30%
+                if semantic_score > 0.5:
+                    reasons.append(f"Semantic similarity: {int(semantic_score * 100)}%")
+            except Exception as e:
+                logger.debug(f"Semantic similarity failed: {e}")
+        
+        # Method 3: Text similarity (if sklearn available)
         if self.use_sklearn:
             text_score = self._calculate_text_similarity(
                 error_signature,
                 jira_text
             )
-            scores.append(text_score * 0.3)  # Weight: 30%
+            scores.append(text_score * 0.2)  # Weight: 20% (reduced)
             if text_score > 0.5:
                 reasons.append(f"Text similarity: {int(text_score * 100)}%")
         
-        # Method 3: Edit distance (if Levenshtein available)
+        # Method 4: Edit distance (if Levenshtein available)
         if self.use_levenshtein:
             edit_score = self._calculate_edit_similarity(
                 error_signature,
                 jira_issue.get('summary', '')
             )
-            scores.append(edit_score * 0.2)  # Weight: 20%
+            scores.append(edit_score * 0.1)  # Weight: 10% (reduced)
             if edit_score > 0.5:
                 reasons.append(f"Summary match: {int(edit_score * 100)}%")
         

@@ -7,6 +7,10 @@ Helper functions for keyword extraction, text processing, and other utilities.
 import re
 from typing import List, Set
 from dataclasses import dataclass
+from .nlp_utils import get_nlp_processor
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Common noise words to filter out from keyword extraction
@@ -69,6 +73,8 @@ def extract_keywords_from_test_name(test_name: str) -> List[str]:
     """
     Extract keywords from a test name using naming conventions.
     
+    Now uses NLP processing with automatic fallback.
+    
     Examples:
         test_memory_allocation -> ['memory', 'allocation']
         test_dma_transfer_basic -> ['dma', 'transfer', 'basic']
@@ -89,21 +95,35 @@ def extract_keywords_from_test_name(test_name: str) -> List[str]:
             name = name[len(prefix):]
             break
     
-    # Split on underscores and camelCase
-    # First handle camelCase
-    name = re.sub('([a-z])([A-Z])', r'\1_\2', name)
-    
-    # Split on underscores
-    parts = name.split('_')
-    
-    # Filter meaningful parts
-    keywords = []
-    for part in parts:
-        part = part.strip()
-        if len(part) > 2 and part not in NOISE_WORDS:
-            keywords.append(part)
-    
-    return keywords
+    # Try NLP processing (with fallback)
+    try:
+        nlp = get_nlp_processor()
+        keywords, metadata = nlp.extract_keywords(name, max_keywords=10)
+        
+        # Log if fallback was used
+        if metadata.get('fallback_triggered'):
+            logger.debug(f"NLP fallback used for test name: {test_name}")
+        
+        return keywords
+    except Exception as e:
+        # Ultimate fallback to original logic
+        logger.warning(f"NLP processing failed for test name, using simple extraction: {e}")
+        
+        # Split on underscores and camelCase
+        # First handle camelCase
+        name = re.sub('([a-z])([A-Z])', r'\1_\2', name)
+        
+        # Split on underscores
+        parts = name.split('_')
+        
+        # Filter meaningful parts
+        keywords = []
+        for part in parts:
+            part = part.strip()
+            if len(part) > 2 and part not in NOISE_WORDS:
+                keywords.append(part)
+        
+        return keywords
 
 
 def clean_text_for_comparison(text: str) -> str:
