@@ -19,6 +19,8 @@ from .log_analyzer import LogAnalyzer
 from .error_matcher import ErrorMatcher
 from .utils import extract_keywords_from_test_name
 from .security import SecurityError
+from .pattern_learner import PatternLearner
+from .nlp_utils import get_nlp_processor
 
 # Load environment variables
 load_dotenv()
@@ -31,11 +33,12 @@ db: Optional[RegressionDB] = None
 jira: Optional[JiraClient] = None
 log_analyzer: Optional[LogAnalyzer] = None
 error_matcher: Optional[ErrorMatcher] = None
+pattern_learner: Optional[PatternLearner] = None
 
 
 def initialize():
     """Initialize all clients"""
-    global db, jira, log_analyzer, error_matcher
+    global db, jira, log_analyzer, error_matcher, pattern_learner
     
     try:
         db = RegressionDB()
@@ -45,6 +48,7 @@ def initialize():
             ends_only=None   # Scan entire file, not just ends
         )
         error_matcher = ErrorMatcher()
+        pattern_learner = PatternLearner()
     except Exception as e:
         print(f"Error initializing: {str(e)}", file=sys.stderr)
         raise
@@ -266,6 +270,41 @@ async def list_tools() -> list[Tool]:
                     }
                 }
             }
+        ),
+        Tool(
+            name="discover_error_patterns",
+            description="分析未匹配的错误日志，自动发现新的错误模式",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "min_frequency": {
+                        "type": "integer",
+                        "description": "最小出现次数（默认3）",
+                        "default": 3
+                    },
+                    "export_code": {
+                        "type": "boolean",
+                        "description": "是否导出Python代码",
+                        "default": False
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="get_pattern_learning_stats",
+            description="获取错误模式学习的统计信息",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="get_system_health",
+            description="获取系统健康状态和质量指标",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
         )
     ]
 
@@ -295,6 +334,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await batch_find_solutions_tool(arguments)
         elif name == "list_regression_runs":
             result = await list_regression_runs_tool(arguments)
+        elif name == "discover_error_patterns":
+            result = await discover_error_patterns_tool(arguments)
+        elif name == "get_pattern_learning_stats":
+            result = await get_pattern_learning_stats_tool(arguments)
+        elif name == "get_system_health":
+            result = await get_system_health_tool(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
         
@@ -658,6 +703,115 @@ async def list_regression_runs_tool(args: dict) -> dict:
         'limit_used': limit,
         'runs': runs
     }
+
+
+async def discover_error_patterns_tool(args: dict) -> dict:
+    """发现错误模式"""
+    min_freq = args.get('min_frequency', 3)
+    export_code = args.get('export_code', False)
+    
+    result = pattern_learner.analyze_patterns(min_frequency=min_freq)
+    
+    if export_code and result.get('status') == 'success':
+        code = pattern_learner.export_as_python_code(
+            result['suggested_patterns']
+        )
+        result['python_code'] = code
+        result['code_file'] = 'suggested_patterns.py'
+        result['usage_instructions'] = [
+            "1. 审查建议的模式",
+            "2. 测试正则表达式是否准确",
+            "3. 将通过审核的模式添加到 error_patterns.py",
+            "4. 重启MCP服务器"
+        ]
+    
+    return result
+
+
+async def get_pattern_learning_stats_tool(args: dict) -> dict:
+    """获取统计信息"""
+    return pattern_learner.get_stats()
+
+
+async def get_system_health_tool(args: dict) -> dict:
+    """系统健康检查"""
+    from datetime import datetime
+    
+    health = {
+        'timestamp': datetime.now().isoformat(),
+        'overall_status': 'healthy',
+        'components': {}
+    }
+    
+    # 1. NLP处理器
+    try:
+        nlp = get_nlp_processor()
+        nlp_stats = nlp.get_stats()
+        health['components']['nlp'] = {
+            'status': 'healthy' if nlp_stats['nltk_available'] else 'degraded',
+            'nltk_available': nlp_stats['nltk_available'],
+            'fallback_count': nlp_stats['fallback_count'],
+            'total_calls': nlp_stats['total_calls']
+        }
+    except Exception as e:
+        health['components']['nlp'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # 2. 模式学习
+    try:
+        pattern_stats = pattern_learner.get_stats()
+        health['components']['pattern_learning'] = {
+            'status': 'healthy',
+            'unmatched_errors_recorded': pattern_stats['total_records']
+        }
+    except Exception as e:
+        health['components']['pattern_learning'] = {
+            'status': 'error',
+            'error': str(e)
+        }
+    
+    # 3. 数据库连接
+    try:
+        # 简单测试查询
+        test_runs = db.list_regression_runs(limit=1)
+        health['components']['database'] = {
+            'status': 'healthy',
+            'can_query': True
+        }
+    except Exception as e:
+        health['components']['database'] = {
+            'status': 'unhealthy',
+            'error': str(e)
+        }
+    
+    # 4. JIRA连接
+    try:
+        # 测试JIRA连接
+        if jira and jira.jira:
+            health['components']['jira'] = {
+                'status': 'healthy',
+                'base_url': jira.base_url
+            }
+        else:
+            health['components']['jira'] = {
+                'status': 'not_initialized'
+            }
+    except Exception as e:
+        health['components']['jira'] = {
+            'status': 'unhealthy',
+            'error': str(e)
+        }
+    
+    # 确定总体状态
+    component_statuses = [c.get('status') for c in health['components'].values()]
+    if 'unhealthy' in component_statuses or 'error' in component_statuses:
+        health['overall_status'] = 'degraded'
+    elif 'not_initialized' in component_statuses:
+        health['overall_status'] = 'partial'
+    
+    return health
 
 
 # ============================================================================

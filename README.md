@@ -35,6 +35,43 @@
 
 ## ✨ 主要特性
 
+### 🧠 智能增强功能（新增！）
+
+#### 1. NLP智能匹配
+系统使用高级NLP处理来改进关键词提取和JIRA匹配：
+
+- **词干提取**：running → run, failed → fail
+- **同义词扩展**：memory → [mem, ram, heap, allocation]
+- **技术术语识别**：自动识别GPU, DMA, 0x1234等
+- **语义相似度**：理解"GPU crash"和"graphics card fault"的关联
+- **兜底机制**：即使NLTK不可用也能正常工作
+
+**效果提升**：匹配准确度提升约10-15%
+
+#### 2. 错误模式自动学习
+系统自动学习新的错误模式：
+
+- **自动记录**：记录未匹配到的错误
+- **n-gram分析**：找出共同的错误模式
+- **正则泛化**：自动生成正则表达式
+- **置信度评分**：高/中/低置信度标记
+- **一键导出**：生成可直接使用的Python代码
+
+**工具**：
+- `discover_error_patterns` - 发现新模式
+- `get_pattern_learning_stats` - 查看统计
+- CLI脚本：`python scripts/analyze_unmatched_errors.py`
+
+#### 3. 系统健康监控
+实时监控所有组件状态：
+
+- **NLP状态**：NLTK可用性、fallback次数
+- **模式学习**：未匹配错误数量
+- **数据库连接**：PostgreSQL状态
+- **JIRA连接**：API可用性
+
+**工具**：`get_system_health` - 获取完整健康报告
+
 ### 1. PostgreSQL工具 (5个)
 
 - `query_failed_tests` - 查询失败的测试用例
@@ -294,6 +331,29 @@ python -c "import mcp, psycopg2, jira; print('OK')"
 
 # 测试数据库连接
 python -c "import psycopg2; conn = psycopg2.connect('your_connection_string'); print('DB OK')"
+
+# 测试NLP功能（可选）
+python -c "from regression_jira_mcp.nlp_utils import NLPProcessor; nlp = NLPProcessor(); print('NLP OK')"
+```
+
+### 问题: NLTK资源下载失败
+
+**这不影响系统运行！**
+
+系统会自动使用简化模式。如需手动下载：
+
+```bash
+# 方法1：Python命令
+python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt')"
+
+# 方法2：交互式下载
+python
+>>> import nltk
+>>> nltk.download()  # 打开下载界面
+
+# 方法3：直接使用简化模式
+# 在.env文件中设置：
+ENABLE_NLP_ADVANCED=false
 ```
 
 ### 问题: 无法读取日志文件

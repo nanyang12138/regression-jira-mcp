@@ -3,6 +3,8 @@ JIRA Client Module
 
 JIRA API interface for searching and retrieving issue information.
 Includes read-only protection layer to prevent data modification.
+
+Enhanced with caching and retry mechanisms.
 """
 
 import os
@@ -10,6 +12,11 @@ from typing import List, Dict, Optional
 from jira import JIRA
 from .utils import create_jira_url, extract_keywords
 from .security import validate_jira_operation, SecurityError
+from .cache_manager import get_cache_manager
+from .retry_helper import retry_on_exception, RetryConfig
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ReadOnlyJiraProxy:
@@ -91,6 +98,7 @@ class JiraClient:
         self._raw_jira = None  # Original JIRA instance (not exposed)
         self.jira = None       # Read-only proxy wrapper (used by all methods)
         self.base_url = os.getenv('JIRA_URL', '')
+        self.cache = get_cache_manager()
         self._connect()
     
     def _connect(self):
