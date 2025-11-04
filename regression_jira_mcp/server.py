@@ -22,6 +22,14 @@ from .security import SecurityError
 from .pattern_learner import PatternLearner
 from .nlp_utils import get_nlp_processor
 
+# Try to import ML components (optional)
+try:
+    from .data.feedback_storage import FeedbackStorage
+    from .ml.model_training import JiraMatcherModel
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -34,11 +42,13 @@ jira: Optional[JiraClient] = None
 log_analyzer: Optional[LogAnalyzer] = None
 error_matcher: Optional[ErrorMatcher] = None
 pattern_learner: Optional[PatternLearner] = None
+feedback_storage = None  # Optional ML component
+ml_model = None  # Optional ML component
 
 
 def initialize():
     """Initialize all clients"""
-    global db, jira, log_analyzer, error_matcher, pattern_learner
+    global db, jira, log_analyzer, error_matcher, pattern_learner, feedback_storage, ml_model
     
     try:
         db = RegressionDB()
@@ -49,6 +59,17 @@ def initialize():
         )
         error_matcher = ErrorMatcher()
         pattern_learner = PatternLearner()
+        
+        # Initialize ML components if available
+        if ML_AVAILABLE:
+            try:
+                feedback_storage = FeedbackStorage()
+                ml_model = JiraMatcherModel()
+                print("ML components initialized", file=sys.stderr)
+            except Exception as e:
+                print(f"ML components not available: {e}", file=sys.stderr)
+                feedback_storage = None
+                ml_model = None
     except Exception as e:
         print(f"Error initializing: {str(e)}", file=sys.stderr)
         raise
@@ -273,18 +294,18 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="discover_error_patterns",
-            description="分析未匹配的错误日志，自动发现新的错误模式",
+            description="Analyze unmatched error logs and auto-discover new error patterns",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "min_frequency": {
                         "type": "integer",
-                        "description": "最小出现次数（默认3）",
+                        "description": "Minimum occurrence count (default: 3)",
                         "default": 3
                     },
                     "export_code": {
                         "type": "boolean",
-                        "description": "是否导出Python代码",
+                        "description": "Whether to export Python code",
                         "default": False
                     }
                 }
@@ -292,7 +313,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_pattern_learning_stats",
-            description="获取错误模式学习的统计信息",
+            description="Get statistics of error pattern learning",
             inputSchema={
                 "type": "object",
                 "properties": {}
@@ -300,7 +321,55 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_system_health",
-            description="获取系统健康状态和质量指标",
+            description="Get system health status and quality metrics",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="provide_match_feedback",
+            description="Provide feedback on JIRA match quality to improve ML model",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "test_name": {
+                        "type": "string",
+                        "description": "Test name"
+                    },
+                    "jira_key": {
+                        "type": "string",
+                        "description": "JIRA issue key"
+                    },
+                    "is_relevant": {
+                        "type": "boolean",
+                        "description": "Whether the JIRA actually solved the test issue"
+                    },
+                    "relevance_score": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Relevance score (1-5, optional)"
+                    },
+                    "comments": {
+                        "type": "string",
+                        "description": "Optional additional comments"
+                    }
+                },
+                "required": ["test_name", "jira_key", "is_relevant"]
+            }
+        ),
+        Tool(
+            name="train_ml_model",
+            description="Train ML model using collected feedback data",
+            inputSchema={
+                "type": "object",
+                "properties": {}
+            }
+        ),
+        Tool(
+            name="get_ml_model_status",
+            description="Get ML model status and statistics",
             inputSchema={
                 "type": "object",
                 "properties": {}
@@ -340,6 +409,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = await get_pattern_learning_stats_tool(arguments)
         elif name == "get_system_health":
             result = await get_system_health_tool(arguments)
+        elif name == "provide_match_feedback":
+            result = await provide_match_feedback_tool(arguments)
+        elif name == "train_ml_model":
+            result = await train_ml_model_tool(arguments)
+        elif name == "get_ml_model_status":
+            result = await get_ml_model_status_tool(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
         
@@ -706,7 +781,7 @@ async def list_regression_runs_tool(args: dict) -> dict:
 
 
 async def discover_error_patterns_tool(args: dict) -> dict:
-    """发现错误模式"""
+    """Discover error patterns from unmatched logs"""
     min_freq = args.get('min_frequency', 3)
     export_code = args.get('export_code', False)
     
@@ -719,22 +794,22 @@ async def discover_error_patterns_tool(args: dict) -> dict:
         result['python_code'] = code
         result['code_file'] = 'suggested_patterns.py'
         result['usage_instructions'] = [
-            "1. 审查建议的模式",
-            "2. 测试正则表达式是否准确",
-            "3. 将通过审核的模式添加到 error_patterns.py",
-            "4. 重启MCP服务器"
+            "1. Review suggested patterns",
+            "2. Test regex accuracy",
+            "3. Add approved patterns to error_patterns.py",
+            "4. Restart MCP server"
         ]
     
     return result
 
 
 async def get_pattern_learning_stats_tool(args: dict) -> dict:
-    """获取统计信息"""
+    """Get pattern learning statistics"""
     return pattern_learner.get_stats()
 
 
 async def get_system_health_tool(args: dict) -> dict:
-    """系统健康检查"""
+    """System health check"""
     from datetime import datetime
     
     health = {
@@ -743,7 +818,7 @@ async def get_system_health_tool(args: dict) -> dict:
         'components': {}
     }
     
-    # 1. NLP处理器
+    # 1. NLP Processor
     try:
         nlp = get_nlp_processor()
         nlp_stats = nlp.get_stats()
@@ -759,7 +834,7 @@ async def get_system_health_tool(args: dict) -> dict:
             'error': str(e)
         }
     
-    # 2. 模式学习
+    # 2. Pattern Learning
     try:
         pattern_stats = pattern_learner.get_stats()
         health['components']['pattern_learning'] = {
@@ -772,9 +847,9 @@ async def get_system_health_tool(args: dict) -> dict:
             'error': str(e)
         }
     
-    # 3. 数据库连接
+    # 3. Database Connection
     try:
-        # 简单测试查询
+        # Simple test query
         test_runs = db.list_regression_runs(limit=1)
         health['components']['database'] = {
             'status': 'healthy',
@@ -786,9 +861,9 @@ async def get_system_health_tool(args: dict) -> dict:
             'error': str(e)
         }
     
-    # 4. JIRA连接
+    # 4. JIRA Connection
     try:
-        # 测试JIRA连接
+        # Test JIRA connection
         if jira and jira.jira:
             health['components']['jira'] = {
                 'status': 'healthy',
@@ -804,14 +879,113 @@ async def get_system_health_tool(args: dict) -> dict:
             'error': str(e)
         }
     
-    # 确定总体状态
-    component_statuses = [c.get('status') for c in health['components'].values()]
+    # 5. ML Model (optional)
+    if ML_AVAILABLE and ml_model:
+        try:
+            model_info = ml_model.get_info()
+            feedback_stats = feedback_storage.get_stats() if feedback_storage else {}
+            health['components']['ml_model'] = {
+                'status': 'trained' if model_info['is_trained'] else 'not_trained',
+                'accuracy': model_info.get('accuracy', 'N/A'),
+                'feedback_collected': feedback_stats.get('total_feedback', 0),
+                'ready_for_training': feedback_stats.get('total_feedback', 0) >= 20
+            }
+        except Exception as e:
+            health['components']['ml_model'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+    else:
+        health['components']['ml_model'] = {
+            'status': 'not_available',
+            'message': 'Install scikit-learn to enable ML features'
+        }
+    
+    # Determine overall status
+    component_statuses = [c.get('status') for c in health['components'].values() if c.get('status') not in ['not_available', 'not_trained']]
     if 'unhealthy' in component_statuses or 'error' in component_statuses:
         health['overall_status'] = 'degraded'
     elif 'not_initialized' in component_statuses:
         health['overall_status'] = 'partial'
     
     return health
+
+
+async def provide_match_feedback_tool(args: dict) -> dict:
+    """Provide feedback on JIRA match quality"""
+    if not ML_AVAILABLE or not feedback_storage:
+        return {
+            'status': 'unavailable',
+            'message': 'ML components not available. Install scikit-learn to enable.'
+        }
+    
+    feedback_id = feedback_storage.add_feedback(
+        test_name=args['test_name'],
+        jira_key=args['jira_key'],
+        is_relevant=args['is_relevant'],
+        relevance_score=args.get('relevance_score'),
+        comments=args.get('comments', '')
+    )
+    
+    stats = feedback_storage.get_stats()
+    
+    return {
+        'status': 'success',
+        'feedback_id': feedback_id,
+        'message': 'Thank you for your feedback!',
+        'total_feedback': stats['total_feedback'],
+        'ready_for_training': stats['total_feedback'] >= 20,
+        'note': f"Need {max(0, 20 - stats['total_feedback'])} more feedback to train model" if stats['total_feedback'] < 20 else "Ready to train!"
+    }
+
+
+async def train_ml_model_tool(args: dict) -> dict:
+    """Train ML model using feedback data"""
+    if not ML_AVAILABLE or not ml_model or not feedback_storage:
+        return {
+            'status': 'unavailable',
+            'message': 'ML components not available. Install scikit-learn to enable.'
+        }
+    
+    training_data = feedback_storage.get_training_data(min_samples=20)
+    
+    if not training_data:
+        stats = feedback_storage.get_stats()
+        return {
+            'status': 'error',
+            'message': f'Insufficient training data (need ≥20, got {stats["total_feedback"]})',
+            'total_feedback': stats['total_feedback']
+        }
+    
+    result = ml_model.train(training_data)
+    return result
+
+
+async def get_ml_model_status_tool(args: dict) -> dict:
+    """Get ML model status"""
+    if not ML_AVAILABLE:
+        return {
+            'ml_available': False,
+            'message': 'ML components not installed. Install scikit-learn to enable.',
+            'install_command': 'pip install scikit-learn'
+        }
+    
+    if not ml_model or not feedback_storage:
+        return {
+            'ml_available': True,
+            'ml_initialized': False,
+            'message': 'ML components failed to initialize'
+        }
+    
+    model_info = ml_model.get_info()
+    feedback_stats = feedback_storage.get_stats()
+    
+    return {
+        'ml_available': True,
+        'ml_model': model_info,
+        'feedback_data': feedback_stats,
+        'training_ready': feedback_stats['total_feedback'] >= 20
+    }
 
 
 # ============================================================================

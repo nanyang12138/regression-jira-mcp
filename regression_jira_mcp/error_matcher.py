@@ -21,6 +21,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Try to import ML model (optional)
+try:
+    from .ml.model_training import JiraMatcherModel
+    ML_MODEL_AVAILABLE = True
+except ImportError:
+    ML_MODEL_AVAILABLE = False
+    logger.debug("ML model not available")
+
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
@@ -80,6 +88,16 @@ class ErrorMatcher:
         self.use_sklearn = SKLEARN_AVAILABLE
         self.use_levenshtein = LEVENSHTEIN_AVAILABLE
         self.nlp = get_nlp_processor()
+        
+        # Initialize ML model if available
+        if ML_MODEL_AVAILABLE:
+            try:
+                self.ml_model = JiraMatcherModel()
+            except Exception as e:
+                logger.warning(f"Failed to initialize ML model: {e}")
+                self.ml_model = None
+        else:
+            self.ml_model = None
     
     def match_jira_issues(
         self,
@@ -88,7 +106,8 @@ class ErrorMatcher:
         jira_issues: List[Dict],
         min_score: float = 0.3,
         max_results: int = 10,
-        use_semantic: bool = True
+        use_semantic: bool = True,
+        use_ml: bool = True
     ) -> List[JiraMatch]:
         """
         Match and rank JIRA issues against test error.
@@ -100,6 +119,7 @@ class ErrorMatcher:
             min_score: Minimum similarity score (0.0-1.0)
             max_results: Maximum number of results to return
             use_semantic: Whether to use semantic similarity (NLP-enhanced)
+            use_ml: Whether to use ML model (if trained)
             
         Returns:
             List of JiraMatch objects, sorted by relevance
@@ -120,13 +140,34 @@ class ErrorMatcher:
         matches = []
         
         for issue in jira_issues:
-            # Calculate similarity score
-            score, reason, matching_kw = self._calculate_similarity(
+            # Calculate traditional similarity score
+            traditional_score, reason, matching_kw = self._calculate_similarity(
                 error_signature,
                 expanded_keywords,
                 issue,
                 use_semantic=use_semantic
             )
+            
+            # Try ML prediction for enhanced scoring
+            ml_score = None
+            if use_ml and self.ml_model and self.ml_model.is_trained:
+                try:
+                    ml_score = self.ml_model.predict_relevance(
+                        error_signature,
+                        issue.get('summary', ''),
+                        issue.get('description', '')
+                    )
+                except Exception as e:
+                    logger.debug(f"ML prediction failed: {e}")
+            
+            # Combine scores
+            if ml_score is not None:
+                # ML available: weighted combination
+                score = 0.6 * ml_score + 0.4 * traditional_score
+                reason = f"ML-enhanced (ML: {ml_score:.2f}, Traditional: {traditional_score:.2f})"
+            else:
+                # ML not available: use traditional
+                score = traditional_score
             
             if score >= min_score:
                 # Extract solution summary
